@@ -65,7 +65,7 @@ def opt_td(q, td, lr):
     return opt(q, td, -lr)
 
 
-def repeatedly(fn, it):
+def repeat(fn, it):
     return [fn() for i in (range(it) if isinstance(it, int) else it)]
 
 
@@ -90,29 +90,7 @@ def train_step(env, agent):
 
 
 def train(env, agent, n_episodes):
-    repeatedly(lambda: train_step(env, agent), trange(n_episodes))
-
-
-def visualize(env, agent):
-    fig, axs = plt.subplots(1, 3, figsize=(12, 8))
-
-    axs[0].plot(np.convolve(env.return_queue, np.ones(100)))
-    axs[0].set_title("Episode Rewards")
-    axs[0].set_xlabel("Episode")
-    axs[0].set_ylabel("Reward")
-
-    axs[1].plot(np.convolve(env.length_queue, np.ones(100)))
-    axs[1].set_title("Episode Length")
-    axs[1].set_xlabel("Episode")
-    axs[1].set_ylabel("Length")
-
-    axs[2].plot(np.convolve(agent('training_error'), np.ones(100)))
-    axs[2].set_title("Training Error")
-    axs[2].set_xlabel("Episode")
-    axs[2].set_ylabel("Temporal Difference")
-
-    plt.tight_layout()
-    plt.show()
+    repeat(lambda: train_step(env, agent), trange(n_episodes))
 
 
 def plot(ax, xs, title=None, xlabel=None, ylabel=None):
@@ -126,10 +104,10 @@ def viz1(ax, xs):
     plot(ax, *(xs if isinstance(xs, tuple) else (xs,)))
 
 
-def compose(*fns):
-    def compose2(f, g):
+def comp(*fns):
+    def comp2(f, g):
         return lambda *a, **kw: f(g(*a, **kw))
-    return reduce(compose2, fns)
+    return reduce(comp2, fns)
 
 
 def apply(f, *args, **kwargs):
@@ -138,7 +116,7 @@ def apply(f, *args, **kwargs):
 
 def applyn(f, x, n):
     assert n >= 0
-    return compose(*([f] * n))(x) if n > 0 else x
+    return comp(*([f] * n))(x) if n > 0 else x
 
 
 def wrap(x, t=list):
@@ -146,6 +124,8 @@ def wrap(x, t=list):
         return [x]
     elif t is tuple:
         return (x,)
+    elif t is np.ndarray:
+        return np.array(wrap(x, list))
     else:
         assert_never(t)
 
@@ -168,7 +148,8 @@ def subplots(nrows, ncols, *args, **kwargs):
 
 
 def _viz(xss, figsize=(12, 8)):
-    foreach(viz1, zip(subplots(1, len(xss), figsize=figsize)[1], xss))
+    _, axs = subplots(1, len(xss), figsize=figsize)
+    foreach(viz1, zip(axs, xss))
     plt.tight_layout()
     plt.show()
 
@@ -177,15 +158,17 @@ def viz(xss, figsize=(12, 8)):
     return _viz(nest(xss, 2), figsize)
 
 
-def viz_rl(env, agent):
-    metrics = [env.return_queue, env.length_queue, agent("training_error")]
-    metrics = [np.convolve(m, np.ones(100)) for m in metrics]
-    labels = [("Episode Rewards", "Episode", "Reward"), 
-              ("Episode Length", "Episode", "Length"), 
-              ("Training Error", "Episode", "Temporal Difference")]
-    metrics = [(m, *l) for m, l in zip(metrics, labels)]
+def rsum(xs, w=100):
+    return np.convolve(xs, np.ones(w)) if w != 1 else xs
 
-    viz(metrics)
+
+def viz_rl(env, agent, window=100):
+    ms = map(rsum ,[env.return_queue, env.length_queue, agent("training_error")])
+    ls = [("Episode Rewards", "Episode", "Reward"), 
+          ("Episode Length", "Episode", "Length"), 
+          ("Training Error", "Episode", "Temporal Difference")]
+
+    viz([(m, *l) for m, l in zip(ms, ls)])
 
 
 def pprint_env(env, n=0):
