@@ -1,0 +1,19 @@
+[project]
+name = "pacmangym"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "gymnasium[box2d]>=1.0.0",
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.0",
+    "pillow>=11.1.0",
+    "pyglet>=2.0.20",
+    "swig>=4.3.0",
+    "tqdm>=4.67.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
