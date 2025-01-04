@@ -1,10 +1,12 @@
 from collections import defaultdict
 import functools
+from functools import reduce
 import operator as op
 from typing import assert_never
 
 import gymnasium as gym
 from gymnasium import Env
+from gymnasium.wrappers import RecordEpisodeStatistics
 from matplotlib import pyplot as plt
 import numpy as np
 from tqdm import trange
@@ -12,6 +14,10 @@ from tqdm import trange
 
 def starfilter(f, xs):
     return filter(lambda x: f(*x), xs)
+
+
+def foreach(f, xs):
+    [f(*x) for x in xs]
 
 
 def fdict(d, ks):
@@ -60,7 +66,7 @@ def opt_td(q, td, lr):
 
 
 def repeatedly(fn, it):
-    return [fn(i) for i in (range(it) if isinstance(it, int) else it)]
+    return [fn() for i in (range(it) if isinstance(it, int) else it)]
 
 
 def step(obs, env, agent):
@@ -84,11 +90,11 @@ def train_step(env, agent):
 
 
 def train(env, agent, n_episodes):
-    repeatedly(lambda _: train_step(env, agent), trange(n_episodes))
+    repeatedly(lambda: train_step(env, agent), trange(n_episodes))
 
 
 def visualize(env, agent):
-    fig, axs = plt.subplots(1, 3, figsize=(20, 8))
+    fig, axs = plt.subplots(1, 3, figsize=(12, 8))
 
     axs[0].plot(np.convolve(env.return_queue, np.ones(100)))
     axs[0].set_title("Episode Rewards")
@@ -107,6 +113,79 @@ def visualize(env, agent):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot(ax, xs, title=None, xlabel=None, ylabel=None):
+    ax.plot(xs)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+
+def viz1(ax, xs):
+    plot(ax, *(xs if isinstance(xs, tuple) else (xs,)))
+
+
+def compose(*fns):
+    def compose2(f, g):
+        return lambda *a, **kw: f(g(*a, **kw))
+    return reduce(compose2, fns)
+
+
+def apply(f, *args, **kwargs):
+    return f(*args, **kwargs)
+
+
+def applyn(f, x, n):
+    assert n >= 0
+    return compose(*([f] * n))(x) if n > 0 else x
+
+
+def wrap(x, t=list):
+    if t is list:
+        return [x]
+    elif t is tuple:
+        return (x,)
+    else:
+        assert_never(t)
+
+
+# Note: assumes all elements have the same shape
+def nesting(xs):
+    if isinstance(xs, (list, tuple, np.ndarray)):
+        return 1 + nesting(xs[0])
+    else:
+        return 0
+
+
+def nest(xss, level=1):
+    return applyn(wrap, xss, n=max(0, level - nesting(xss)))
+
+
+def subplots(nrows, ncols, *args, **kwargs):
+    fig, axs = plt.subplots(nrows, ncols, *args, **kwargs)
+    return fig, nest(axs, level=1)
+
+
+def _viz(xss, figsize=(12, 8)):
+    foreach(viz1, zip(subplots(1, len(xss), figsize=figsize)[1], xss))
+    plt.tight_layout()
+    plt.show()
+
+
+def viz(xss, figsize=(12, 8)):
+    return _viz(nest(xss, 2), figsize)
+
+
+def viz_rl(env, agent):
+    metrics = [env.return_queue, env.length_queue, agent("training_error")]
+    metrics = [np.convolve(m, np.ones(100)) for m in metrics]
+    labels = [("Episode Rewards", "Episode", "Reward"), 
+              ("Episode Length", "Episode", "Length"), 
+              ("Training Error", "Episode", "Temporal Difference")]
+    metrics = [(m, *l) for m, l in zip(metrics, labels)]
+
+    viz(metrics)
 
 
 def pprint_env(env, n=0):
@@ -164,22 +243,22 @@ def make_blackjack_agent(_env, _lr, _eps, _eps_decay, _final_eps, _discount_fact
 
 
 def main():
-    learning_rate = 0.01
-    n_episodes = 100_000
+    learning_rate = 1e-2
+    n_episodes = int(1e5)
     initial_epsilon = 1.0
     epsilon_decay = initial_epsilon / (n_episodes / 2)  # 0.00002
     final_epsilon = 0.1
 
     env = gym.make("Blackjack-v1", sab=False)
+    env = RecordEpisodeStatistics(env, buffer_length=n_episodes)
 
     agent = make_blackjack_agent(
         env, learning_rate, initial_epsilon, epsilon_decay, final_epsilon
     )
 
-    env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length=n_episodes)
-
     train(env, agent, n_episodes)
-    visualize(env, agent)
+    viz_rl(env, agent)
+
 
 
 if __name__ == "__main__":
